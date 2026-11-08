@@ -1,0 +1,4 @@
+# ksPlugPoseForce PoseForce v1
+# 内蔵の補正値（origin=builtin）。0.1.1 から空（kPlug の値は内蔵しない。kPlug の書き出しを取り込むか、利用者が編集で用意する）。
+# 将来、独自の補正値を入れる場所。形式は docs/POSE_FORCE_TABLE_FORMAT.md と同じ（origin 列は読み込み時に builtin になる）。
+asset	kplug	chara	state	field	x	y	z	target	origin

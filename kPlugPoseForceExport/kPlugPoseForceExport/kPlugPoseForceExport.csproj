@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    kPlugPoseForceExport: KK（Koikatu）・KKP（Koikatsu Party）用。実行中の kPlug から姿勢補正の値を書き出し、KKS の ksPlugPoseForce に渡す。
+    .NET 3.5 / Unity 5.6。KK でビルドした 1 つの DLL を KKP でも使う（ゲーム側の参照は ChaControl と UnityEngine だけ）。
+    参照の ..\..\ はゲームのインストール先（BepInEx と Koikatu_Data がある所）。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net35</TargetFramework>
+    <!-- DLL のプロパティ（ファイル/製品バージョン）を PoseForceExportPlugin.Version と揃えるため、そこから読み取る（値を書く場所は PoseForceExportPlugin.cs だけ）。 -->
+    <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\PoseForceExportPlugin.cs')), 'const string Version = "([0-9.]+)"').Groups[1].Value)</Version>
+    <Product>kPlugPoseForceExport</Product>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <GenerateAssemblyInfo>True</GenerateAssemblyInfo>
+    <EnableDefaultItems>False</EnableDefaultItems>
+    <Configurations>Release_KK</Configurations>
+    <Configuration Condition="'$(Configuration)' == ''">Release_KK</Configuration>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release_KK'">
+    <AssemblyName>kPlugPoseForceExport</AssemblyName>
+    <DefineConstants>KK</DefineConstants>
+    <GameManagedPath>..\..\Koikatu_Data\Managed</GameManagedPath>
+    <Optimize>true</Optimize>
+    <DebugType>None</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="PoseForceExportPlugin.cs" />
+    <Compile Include="PoseForceExport.cs" />
+    <Compile Include="PoseForceExportSampler.cs" />
+    <Compile Include="PoseForceExportState.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>..\..\BepInEx\core\BepInEx.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>..\..\BepInEx\core\0Harmony.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GameManagedPath)\UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!--
+      kPlug.dll / kPlugVR.dll は参照しない（kPlugPatcher_InviteChrID と同じ。型の読み取りはすべてリフレクション）。
+    -->
+    <!-- ChaControl（採取の前後で骨と IK を保存・復元する） -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameManagedPath)\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+</Project>

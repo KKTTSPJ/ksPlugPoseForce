@@ -1,0 +1,10 @@
+bin/
+obj/
+.vs/
+*.user
+dist/
+Deploy/
+# local build references (junctions)
+/BepInEx
+/Koikatu_Data
+/KoikatsuSunshine_Data

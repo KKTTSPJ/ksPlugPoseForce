@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    ksPlugPoseForce: Koikatsu Sunshine（KKS）用。H の挿入で、体位・状態ごとの値の表に従って姿勢を補正する。.NET 4.6 / Unity 2019.4。
+    参照の ..\..\ はゲームのインストール先（BepInEx と KoikatsuSunshine_Data がある所）。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net46</TargetFramework>
+    <!-- DLL のプロパティ（ファイル/製品バージョン）を PoseForcePlugin.Version と揃えるため、そこから読み取る（値を書く場所は PoseForcePlugin.cs だけ）。 -->
+    <Version>$([System.Text.RegularExpressions.Regex]::Match($([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\PoseForcePlugin.cs')), 'const string Version = "([0-9.]+)"').Groups[1].Value)</Version>
+    <Product>ksPlugPoseForce</Product>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <GenerateAssemblyInfo>True</GenerateAssemblyInfo>
+    <EnableDefaultItems>False</EnableDefaultItems>
+    <Configurations>Release_KKS</Configurations>
+    <Configuration Condition="'$(Configuration)' == ''">Release_KKS</Configuration>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release_KKS'">
+    <AssemblyName>ksPlugPoseForce</AssemblyName>
+    <DefineConstants>KKS</DefineConstants>
+    <GameManagedPath>..\..\KoikatsuSunshine_Data\Managed</GameManagedPath>
+    <Optimize>true</Optimize>
+    <DebugType>None</DebugType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="PoseForcePlugin.cs" />
+    <Compile Include="PoseForce.cs" />
+    <Compile Include="PoseForceActors.cs" />
+    <Compile Include="PoseForceAmounts.cs" />
+    <Compile Include="PoseForceControls.cs" />
+    <Compile Include="PoseForceFields.cs" />
+    <Compile Include="PoseForceTable.cs" />
+    <Compile Include="PoseForceBones.cs" />
+    <Compile Include="PoseForceImport.cs" />
+    <Compile Include="PoseForceImportUI.cs" />
+    <Compile Include="PoseForceHandIK.cs" />
+    <Compile Include="PoseForceTargetLease.cs" />
+    <Compile Include="PoseForceNativeHandIK.cs" />
+    <Compile Include="PoseForceEdits.cs" />
+    <Compile Include="PoseForceEditor.cs" />
+    <Compile Include="PoseForceEditorUI.cs" />
+    <Compile Include="PoseForceEditorNumbers.cs" />
+    <Compile Include="PoseForceWindows.cs" />
+    <Compile Include="PoseForceDialogs.cs" />
+    <Compile Include="PoseForceDialogScope.cs" />
+    <Compile Include="PoseForceShare.cs" />
+    <Compile Include="PoseForceShareUI.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 内蔵の値の表（今は列名だけ。将来の独自の補正値を入れる場所）。PoseForceTable が名前で読む -->
+    <EmbeddedResource Include="PoseForceBuiltin.tsv">
+      <LogicalName>ksPlugPoseForce.PoseForce.Builtin.tsv</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="BepInEx">
+      <HintPath>..\..\BepInEx\core\BepInEx.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>..\..\BepInEx\core\0Harmony.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- ksPlug.dll / ksPlugVR.dll は参照しない（姿勢補正は ksPlug の型を使わない。ksPlug が無くても動く）。 -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameManagedPath)\Assembly-CSharp.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- FinalIK（FullBodyBipedIK など）は firstpass にある -->
+    <Reference Include="Assembly-CSharp-firstpass">
+      <HintPath>$(GameManagedPath)\Assembly-CSharp-firstpass.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <!-- 画面の下の UI へのクリックを止める透明なキャンバス（PoseForceInputBlocker） -->
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameManagedPath)\UnityEngine.UI.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GameManagedPath)\UnityEngine.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="$(GameManagedPath)\UnityEngine.*Module.dll">
+      <Private>False</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
