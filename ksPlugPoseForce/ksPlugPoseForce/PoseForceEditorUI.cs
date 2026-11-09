@@ -53,10 +53,12 @@ namespace ksPlugPoseForce
             var rows = new List<PoseForceRow>(_editorView.Get(_editor.Asset, _editorChara, _editorState));
             rows.Sort((a, b) => StringComparer.Ordinal.Compare(a.Field, b.Field));
             if (rows.Count == 0) GUILayout.Label("この人・状態には補正項目がありません。下の追加ボタンから設定できます。", EditorLabel);
+            var live = LiveRig(chara);
+            if (rows.Count > 0 && live == null) GUILayout.Label("欄ごとの「効くか」は、ゲームの今の状態を選んでいるときに表示します。", EditorLabel);
             foreach (var source in rows)
             {
                 if (!PoseForceFields.Supports(source.Field)) { GUILayout.Label(source.Field + "（この版では編集・適用しない欄）"); continue; }
-                DrawEditorRow(source);
+                DrawEditorRow(source, live, rows);
             }
             if (GUILayout.Button("補正項目（位置・回転・手のIK）を追加")) _showFields = !_showFields;
             if (_showFields) DrawAddField();
@@ -94,7 +96,17 @@ namespace ksPlugPoseForce
             GUILayout.EndScrollView();
         }
 
-        private static void DrawEditorRow(PoseForceRow source)
+        /// <summary>編集中の体位・状態がゲームの今の体位・状態なら、その人の Rig（欄ごとの「効くか」の表示用）。</summary>
+        private static Rig LiveRig(string chara)
+        {
+            if (_editor == null || _proc == null || _proc.flags == null) return null;
+            if ((_proc.flags.nowAnimationInfo?.paramFemale?.path?.file ?? "") != _editor.Asset) return null;
+            if ((_proc.flags.nowAnimStateName ?? "") != _editorState) return null;
+            var rig = chara == "female" ? _female : chara == "female2" ? _female2 : chara == "male" ? _maleRig : null;
+            return rig != null && rig.Ik != null ? rig : null;
+        }
+
+        private static void DrawEditorRow(PoseForceRow source, Rig live, IList<PoseForceRow> rows)
         {
             var row = source.Copy();
             GUILayout.Space(4); GUILayout.BeginHorizontal();
@@ -103,6 +115,11 @@ namespace ksPlugPoseForce
             if (GUILayout.Button("この欄を消す", GUILayout.Width(115)))
                 _editorAction = () => { _editor.Delete(_editorChara, _editorState, row.Field); EditorModified(); ResetEditorSelection(); };
             GUILayout.EndHorizontal();
+            if (live != null)
+            {
+                string status = live.FieldStatus(row.Field, rows);
+                if (status.Length > 0) GUILayout.Label("今の状態で: " + status, EditorLabel);
+            }
             if (PoseForceFields.IsHand(row.Field))
             {
                 GUILayout.BeginHorizontal();

@@ -18,7 +18,7 @@ KK（Koikatu）の **kPlug**（作者 Katarsys）にある姿勢補正を、Koik
 - 対応: ２人の挿入と、標準の３人（女２人＋男）の挿入。表にあるアナルの状態も含みます。対象外: MMF（男２人＋女１人）、ksPlug が２人モードのまま加える招待キャラ、奉仕など、エステ、VR。
 - kPlugPoseForceExport は通常版の kPlug が必要です。kPlug のファイルは参照せず、実行中に読み取ります。
 - 実機で確かめた環境: ksPlugPoseForce は KKS 通常版（ksPlug 1.7.3）、kPlugPoseForceExport は KK 通常版（kPlug 3.6.4。3.6.3 でも同じ表になります）。Koikatsu Party は確かめていません。
-- 版: ksPlugPoseForce 0.1.3、kPlugPoseForceExport 0.1.1
+- 版: ksPlugPoseForce 0.1.4、kPlugPoseForceExport 0.1.1
 
 ## 1. 仕組み
 
@@ -64,6 +64,8 @@ KK（Koikatu）の **kPlug**（作者 Katarsys）にある姿勢補正を、Koik
 | EditorWindowKey | 未割り当て | 値の編集画面の開閉 |
 | ForceUpKey／ForceDownKey | 未割り当て | 補正量を 0.1 増減。押し続けると繰り返します |
 | UseHandIK | true | 手の付け先・ずらしと、既存の手のリンクの追従補助 |
+| LegFKAfterIK | false | 太もも・すねの回転（thighFK_rot・shinFK_rot）を IK を解いた後に足します。脚の IK が働いている体位でも脚が動きますが、足が IK の目標から外れる（接地・接触がずれる）ことがあります |
+| MoveUnlinkedLimbs | false | 手足のずらし（hand_pos・elbow_pos・foot_pos・foot_rot・knee_pos）を、ゲームの IK がその手足を自分の目標に付けていない体位・状態（騎乗位の女の手など）でも効かせます。接触の位置がずれることがあります |
 | LogBones | false | 調査用。骨と手の IK の値を約 1 秒ごとにログに出します |
 
 ConfigurationManager には、ほかに「調整の画面を開く」「値の編集画面を開く」「値の表を読み直す」「書き出しの取り込み画面を開く…」「自分の値の書き出し画面を開く…」のボタンがあります。取り込むファイルは `BepInEx\config\ksPlugPoseForce\import\` に置き、自分の値は `BepInEx\config\ksPlugPoseForce\export\` に書き出されます（どちらも画面を開いたときに作られます）。
@@ -81,9 +83,15 @@ ConfigurationManager には、ほかに「調整の画面を開く」「値の�
 - 取り込んだ値は kPlug の値です。KKS のすべての体位・体格で見た目を確かめたわけではありません。
 - kPlug の新しい版で補正の作りが変わると、書き出しが理由を出して止まることがあります。
 - VR、MMF、２人モードに加えた招待キャラ、奉仕など、エステには対応しません。
+- 欄によって効く条件が違います。手足のずらし（hand_pos など）は、ゲームの IK がその手足を自分の目標に付けている体位・状態だけで効きます。太もも・すね（thighFK_rot・shinFK_rot）は、脚の IK が働いていると IK に上書きされます。それぞれ MoveUnlinkedLimbs・LegFKAfterIK（既定オフ）で動かせます。編集画面に欄ごとの「効く／効かない（理由）」が出ます（[使い方](docs/POSE_FORCE_GUIDE.md) の「欄によって効かないとき」）。
+- ゲームが女の IK を止めている状態では、手足の IK の目標の欄と手の付け替えは効きません（体の骨の欄と太もも・すねは補正します）。
 
 ## 5. 更新履歴
 
+- ksPlugPoseForce 0.1.4:
+  - ゲームが IK を止めている状態でも、体の骨の欄と太もも・すねを補正するようにしました（kPlug と同じ動き）。0.1.3 は何も補正していませんでした。
+  - 設定 LegFKAfterIK（太もも・すねを IK の後に足す）と MoveUnlinkedLimbs（ゲームの IK が自分の目標に付けていない手足もずらす）を追加しました。どちらも既定はオフです。
+  - 編集画面に、欄ごとの「今の状態で: 効く／効かない（理由）」を出すようにしました。LogBones のログに、手足ごとの IK の付け先と重み（`[PoseForce][手足]`）を足しました。
 - ksPlugPoseForce 0.1.3・kPlugPoseForceExport 0.1.1: 最初の公開。
 
 ## 6. ライセンス・免責
@@ -94,5 +102,5 @@ ConfigurationManager には、ほかに「調整の画面を開く」「値の�
 - 本プラグインはゲームの動作を実行時に書き換えます。ゲームや kPlug の版が変わると、機能の一部または全部が働かなくなることがあります（その場合はログに理由が出ます）。
 
 ---
-作成日時: 2026年11月7日 / 最終更新: 2026年11月7日 (ksPlugPoseForce 0.1.3・kPlugPoseForceExport 0.1.1)
+作成日時: 2026年11月7日 / 最終更新: 2026年11月9日 (ksPlugPoseForce 0.1.4・kPlugPoseForceExport 0.1.1)
 作成者: Claude Opus 5.5、ChatGPT Codex（GPT-6）

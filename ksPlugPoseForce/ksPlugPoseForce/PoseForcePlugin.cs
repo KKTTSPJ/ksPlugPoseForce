@@ -24,7 +24,7 @@ namespace ksPlugPoseForce
     {
         public const string GUID = "kkttspj.kks.ksplugposeforce";
         public const string PluginName = "ksPlug Pose Force";
-        public const string Version = "0.1.3";
+        public const string Version = "0.1.4";
 
         /// <summary>値の表・補正量・取り込むファイルを置くフォルダ（BepInEx/config/ksPlugPoseForce）。</summary>
         internal static readonly string DataDirectory = Path.Combine(Paths.ConfigPath, "ksPlugPoseForce");
@@ -72,6 +72,11 @@ namespace ksPlugPoseForce
         private void Update()
         {
             if (!_standDown) PoseForce.OnUpdate();
+        }
+
+        private void LateUpdate()
+        {
+            if (!_standDown) PoseForce.OnLateUpdate();
         }
 
         private void OnGUI()

@@ -70,7 +70,9 @@ namespace ksPlugPoseForce
                 GUILayout.Label("体位：" + (flags.nowAnimationInfo?.paramFemale?.path?.file ?? "?") + "（" + flags.mode + "）", EditorLabel);
                 GUILayout.Label("状態：" + flags.nowAnimStateName);
                 if (editor && _editor != null && _editorKPlugName.Length > 0) GUILayout.Label("kPlug: " + _editorKPlugName);
-                GUILayout.Label(!Enabled.Value ? "EnablePoseForce がオフです" : _active ? "補正しています" : "補正していません：" + _reason, EditorLabel);
+                GUILayout.Label(!Enabled.Value ? "EnablePoseForce がオフです"
+                    : _active ? (_noIK ? "補正しています（女の IK が止まっている状態：手足の IK の目標・手の付け替えは効きません）" : "補正しています")
+                    : "補正していません：" + _reason, EditorLabel);
             }
         }
 

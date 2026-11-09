@@ -36,6 +36,7 @@
     <Compile Include="PoseForceImport.cs" />
     <Compile Include="PoseForceImportUI.cs" />
     <Compile Include="PoseForceHandIK.cs" />
+    <Compile Include="PoseForceLimbIK.cs" />
     <Compile Include="PoseForceTargetLease.cs" />
     <Compile Include="PoseForceNativeHandIK.cs" />
     <Compile Include="PoseForceEdits.cs" />

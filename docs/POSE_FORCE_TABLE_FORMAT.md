@@ -83,7 +83,20 @@ khs_f_00		female	InsertIdle	root_pos	0	0.05	0		user
 | L/R_footFK_rot | cf_j_foot_L/R | localEulerAngles |
 | L/R_toeFK_rot | cf_j_toes_L/R | localEulerAngles |
 
-同じ骨に入る spine_rot と spine_roll は合わせて適用する。FK の回転が IK の後にも残るかは確かめていない。存在しない骨の欄は、警告して使わない。
+同じ骨に入る spine_rot と spine_roll は合わせて適用する。存在しない骨の欄は、警告して使わない。
+
+### 欄の種類と効く条件
+
+補正は IK を解く直前に足す（ゲームがその状態で IK を止めているときは、アニメーションの後に足す）。欄によって効く条件が違う。
+
+| 種類 | 欄 | 効く条件 |
+|---|---|---|
+| 体の骨 | root_pos・waist_rot・spine_rot・spine_roll・L/R_shld_rot・L/R_hipShp_pos・L/R_footFK_rot・L/R_toeFK_rot | いつも。IK が後から書き直さない（足首から先は脚の IK の外） |
+| 手足の IK の目標 | L/R_hand_pos・L/R_elbow_pos・L/R_foot_pos・L/R_foot_rot・L/R_knee_pos | ゲームの IK が、その状態でその手足（ひじ・ひざは曲げの目標）を自分の cf_pv_* に付けているときだけ。設定 MoveUnlinkedLimbs がオンなら、相手の体に付いている手足・IK の付いていない手足も動かす。IK が止まっている状態では効かない |
+| 太もも・すね | L/R_thighFK_rot・L/R_shinFK_rot | 脚の IK が働いていないとき（IK が止まっている状態を含む）。働いていると IK が向きを決め直す。設定 LegFKAfterIK がオンなら、IK を解いた後に足す（足が IK の目標から外れることがある） |
+| 手の付け替え | ik_hand_L・ik_hand_R | IK が動いている状態で、UseHandIK がオンのとき |
+
+値の意味（ずらし・回転の量と向き）は、どの設定でも同じ。MoveUnlinkedLimbs のずらしは、cf_pv_* の親から見た向きで、今の目標に足す。
 
 手の行は `ik_hand_L`・`ik_hand_R`。target は `female:k_f_legupR_00` のように「人:骨の名前」、x/y/z は付け先から見たずらし（m）。female・male・female2 と、自分の骨も指定できる。付け替えは量が０より大きくなった時点で行い、ずらしだけが量に比例する。UseHandIK・既存の手のリンクの追従・診断は [手 IK](POSE_FORCE_HAND_IK.md)。
 
@@ -110,5 +123,5 @@ field は `disabled:` と対応している欄名、x=1、y=z=0、target は空�
 欄を足し直すと、その削除の指定は外れる。「kPlug・内蔵の値に戻す…」でも、この体位の手動の行と削除の指定を取り除ける。手の付け替えの欄を消した場合は、既存の手のリンクの追従に戻ることがある。手の付け替え・追従補助を止めるには UseHandIK を切る（手・肘の位置などの体の補正の欄は引き続き効く）。
 
 ---
-更新日時 (JST): 2026-11-07
+更新日時 (JST): 2026-11-09
 更新者: ChatGPT Codex（GPT-6）、Claude Code（Opus 5.5）

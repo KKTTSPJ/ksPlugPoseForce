@@ -48,6 +48,25 @@ namespace ksPlugPoseForce
             fields.Add(field, new[] { new Binding(bone, mode) });
         }
 
+        /// <summary>
+        /// 欄の種類。効く条件が違う。
+        /// Body: 体の骨。IK が後から書き直さない（IK が止まっていても足す）。
+        /// IKTarget: 手足の IK の目標（cf_pv_*）。ゲームの IK がその手足を自分の目標に付けているときだけ効く。
+        /// LegFK: IK の脚の鎖の中の骨（太もも・すね）。脚の IK が働いていると IK が書き直す。
+        /// Hand: 手の付け替え（ik_hand）。
+        /// </summary>
+        internal enum Kind { Body, IKTarget, LegFK, Hand }
+
+        internal static Kind KindOf(string field)
+        {
+            if (IsHand(field)) return Kind.Hand;
+            if (field.EndsWith("_thighFK_rot", StringComparison.Ordinal) || field.EndsWith("_shinFK_rot", StringComparison.Ordinal)) return Kind.LegFK;
+            if (field.EndsWith("_hand_pos", StringComparison.Ordinal) || field.EndsWith("_elbow_pos", StringComparison.Ordinal)
+                || field.EndsWith("_foot_pos", StringComparison.Ordinal) || field.EndsWith("_foot_rot", StringComparison.Ordinal)
+                || field.EndsWith("_knee_pos", StringComparison.Ordinal)) return Kind.IKTarget;
+            return Kind.Body;
+        }
+
         internal static bool IsHand(string field) { return field == "ik_hand_L" || field == "ik_hand_R"; }
         internal static string[] Names()
         {
