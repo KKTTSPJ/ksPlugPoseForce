@@ -31,6 +31,10 @@ namespace ksPlugPoseForce
         private bool _swappedGoal;
         private Transform _origGoal;
         private float _origBendWeight;
+        // 差し替えた先（戻すときに、ほかの処理が替えていないかを見る）
+        private Transform _placedTarget, _placedGoal;
+        /// <summary>診断の表示用。ForceFootIK で付け替えた・外したとき。</summary>
+        private string _mode;
 
         internal bool Active { get; private set; }
 
@@ -67,13 +71,58 @@ namespace ksPlugPoseForce
             return target.name;
         }
 
-        /// <summary>IK を解く直前。delta・bendDelta はワールドのずらし、rot は目標の向きに掛ける回転。使わない物は null。</summary>
-        internal void Apply(Vector3? delta, Quaternion? rot, Vector3? bendDelta)
+        /// <summary>
+        /// IK を解く直前。delta・bendDelta はワールドのずらし、rot は目標の向きに掛ける回転。使わない物は null。
+        /// 0.1.6 ForceFootIK: forceTarget は足の効き手をこの骨（自分の cf_pv_leg）に付け替えて重み 1（回転も 1）、
+        /// release は足の効き手の重みを 0 にする（太もも・すねの FK を効かせる。目標は替えない）、
+        /// forceGoal は曲げの目標をこの骨（自分の cf_pv_elbo・cf_pv_knee）に付け替えて重み 1。どれも IK の後（Restore）で戻す。
+        /// </summary>
+        internal void Apply(Vector3? delta, Quaternion? rot, Vector3? bendDelta, Transform forceTarget = null, bool release = false, Transform forceGoal = null)
         {
             Restore();
-            if (delta.HasValue || rot.HasValue) SwapTarget(delta ?? Vector3.zero, rot);
-            if (bendDelta.HasValue) SwapGoal(bendDelta.Value);
+            if (release) ReleaseTarget();
+            else if (forceTarget != null) SetTarget(forceTarget);
+            else if (delta.HasValue || rot.HasValue) SwapTarget(delta ?? Vector3.zero, rot);
+            if (forceGoal != null) SetGoal(forceGoal);
+            else if (bendDelta.HasValue) SwapGoal(bendDelta.Value);
             Active = _pending = _swappedTarget || _swappedGoal;
+            // 診断の表示用。ログは IK を解いて戻した後に出るので、次の Apply・Idle まで残す
+            _mode = !Active ? null : release ? "ForceFootIK・足の IK を外す" : forceTarget != null ? "ForceFootIK"
+                : forceGoal != null ? "ForceFootIK・曲げ" : null;
+        }
+
+        private void KeepTarget()
+        {
+            _origTarget = _effector.target;
+            _origPosWeight = _effector.positionWeight;
+            _origRotWeight = _effector.rotationWeight;
+            _swappedTarget = true;
+        }
+
+        private void SetTarget(Transform pv)
+        {
+            KeepTarget();
+            _effector.target = _placedTarget = pv;
+            _effector.positionWeight = 1f;
+            _effector.rotationWeight = 1f;
+        }
+
+        private void ReleaseTarget()
+        {
+            KeepTarget();
+            _placedTarget = _effector.target;
+            _effector.positionWeight = 0f;
+            _effector.rotationWeight = 0f;
+        }
+
+        private void SetGoal(Transform pv)
+        {
+            if (_bend == null) return;
+            _origGoal = _bend.bendGoal;
+            _origBendWeight = _bend.weight;
+            _bend.bendGoal = _placedGoal = pv;
+            _bend.weight = 1f;
+            _swappedGoal = true;
         }
 
         private void SwapTarget(Vector3 delta, Quaternion? rot)
@@ -91,13 +140,10 @@ namespace ksPlugPoseForce
                 _ownTarget = go.transform;
             }
             _ownTarget.SetPositionAndRotation(basePos + delta, rot.HasValue ? baseRot * rot.Value : baseRot);
-            _origTarget = target;
-            _origPosWeight = _effector.positionWeight;
-            _origRotWeight = _effector.rotationWeight;
-            _effector.target = _ownTarget;
+            KeepTarget();
+            _effector.target = _placedTarget = _ownTarget;
             if (!linked) _effector.positionWeight = 1f;
             if (rot.HasValue && !rotLinked) _effector.rotationWeight = 1f;
-            _swappedTarget = true;
         }
 
         private void SwapGoal(Vector3 delta)
@@ -116,7 +162,7 @@ namespace ksPlugPoseForce
             _ownGoal.position = basePos + delta;
             _origGoal = goal;
             _origBendWeight = _bend.weight;
-            _bend.bendGoal = _ownGoal;
+            _bend.bendGoal = _placedGoal = _ownGoal;
             if (!linked) _bend.weight = 1f;
             _swappedGoal = true;
         }
@@ -128,29 +174,60 @@ namespace ksPlugPoseForce
             _pending = false;
             if (_swappedTarget)
             {
-                if (_effector.target == _ownTarget)
+                if (_effector.target == _placedTarget)
                 {
                     _effector.target = _origTarget;
                     _effector.positionWeight = _origPosWeight;
                     _effector.rotationWeight = _origRotWeight;
                 }
                 _swappedTarget = false;
-                _origTarget = null;
+                _origTarget = _placedTarget = null;
             }
             if (_swappedGoal && _bend != null)
             {
-                if (_bend.bendGoal == _ownGoal)
+                if (_bend.bendGoal == _placedGoal)
                 {
                     _bend.bendGoal = _origGoal;
                     _bend.weight = _origBendWeight;
                 }
                 _swappedGoal = false;
-                _origGoal = null;
+                _origGoal = _placedGoal = null;
             }
         }
 
+        /// <summary>
+        /// 0.1.5: ゲームが IK を止めている人の手足を動かすとき（Rig.SolveStopped）。
+        /// 今の手足の位置にずらしを足した仮の目標に重み 1 で付け、曲げは今のひじ・ひざの位置（＋ずらし）へ向ける。
+        /// 元の目標・重みは Rig.SolveStopped がまとめて控えて戻すので、ここでは控えない。
+        /// </summary>
+        internal bool PlaceStopped(Vector3 delta, Quaternion? rot, Vector3 bendDelta)
+        {
+            if (_effector.bone == null) return false;
+            if (_ownTarget == null)
+            {
+                var go = new GameObject("ksPlugPoseForce_Limb_" + Label) { hideFlags = HideFlags.HideAndDontSave };
+                _ownTarget = go.transform;
+            }
+            _ownTarget.SetPositionAndRotation(_effector.bone.position + delta, rot.HasValue ? _effector.bone.rotation * rot.Value : _effector.bone.rotation);
+            _effector.target = _ownTarget;
+            _effector.positionWeight = 1f;
+            _effector.rotationWeight = rot.HasValue ? 1f : 0f;
+            if (_bend != null && _joint != null)
+            {
+                if (_ownGoal == null)
+                {
+                    var go = new GameObject("ksPlugPoseForce_Bend_" + Label) { hideFlags = HideFlags.HideAndDontSave };
+                    _ownGoal = go.transform;
+                }
+                _ownGoal.position = _joint.position + bendDelta;
+                _bend.bendGoal = _ownGoal;
+                _bend.weight = 1f;
+            }
+            return true;
+        }
+
         /// <summary>このフレームはずらさない。</summary>
-        internal void Idle() { Restore(); Active = false; }
+        internal void Idle() { Restore(); Active = false; _mode = null; }
 
         internal void Clear()
         {
@@ -170,7 +247,7 @@ namespace ksPlugPoseForce
             float bendWeight = _swappedGoal ? _origBendWeight : _bend != null ? _bend.weight : 0f;
             string bend = _bend != null ? LinkName(goal) + "・重み " + bendWeight.ToString("0.00") : "なし";
             return Label + " 付け先=" + LinkName(target) + "・位置の重み " + posWeight.ToString("0.00") + "・回転の重み " + rotWeight.ToString("0.00")
-                + "・曲げ " + bend + (Active ? "・ずらし中" : "");
+                + "・曲げ " + bend + (Active ? "・ずらし中" + (_mode != null ?"（" + _mode + "）" : "") : "");
         }
     }
 }

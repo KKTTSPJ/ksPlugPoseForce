@@ -10,7 +10,7 @@ namespace ksPlugPoseForce
         private static Vector2 _editorScroll, _stateScroll, _targetScroll, _copyScroll, _restoreScroll;
         private static bool _showStates, _showFields;
         private static bool _clearEditorFocus;
-        private static int _newFieldIndex, _restoreIndex;
+        private static int _restoreIndex;
         private static string _targetField, _targetSearch = "", _customTarget = "", _copyField;
         private static readonly HashSet<string> CopyStates = new HashSet<string>(StringComparer.Ordinal);
         private static GUIStyle _editorLabel;
@@ -110,7 +110,7 @@ namespace ksPlugPoseForce
         {
             var row = source.Copy();
             GUILayout.Space(4); GUILayout.BeginHorizontal();
-            GUILayout.Label(row.Field + "  [" + row.Origin + "]");
+            GUILayout.Label(PoseForceFields.Label(row.Field) + "（" + row.Field + "）  [" + row.Origin + "]");
             if (GUILayout.Button("他の状態へ写す…", GUILayout.Width(135))) OpenEditorDialog(DialogKind.Copy, row.Field);
             if (GUILayout.Button("この欄を消す", GUILayout.Width(115)))
                 _editorAction = () => { _editor.Delete(_editorChara, _editorState, row.Field); EditorModified(); ResetEditorSelection(); };
@@ -144,14 +144,38 @@ namespace ksPlugPoseForce
             catch (Exception ex) { EditorError(ex); }
         }
 
+        // 0.1.5: 欄を日本語の名前で選ぶ。指の関節ごとの欄は折りたたむ
+        private static readonly string[] AddMainFields = PoseForceFields.MainFields();
+        private static readonly string[] AddFingerFields = PoseForceFields.FingerFields();
+        private static readonly string[] AddMainLabels = Labels(AddMainFields);
+        private static readonly string[] AddFingerLabels = Labels(AddFingerFields);
+        private static string _newField = AddMainFields[0];
+        private static bool _showFingerFields;
+
+        private static string[] Labels(string[] fields)
+        {
+            var labels = new string[fields.Length];
+            for (int i = 0; i < fields.Length; ++i) labels[i] = PoseForceFields.Label(fields[i]);
+            return labels;
+        }
+
         private static void DrawAddField()
         {
-            _newFieldIndex = GUILayout.SelectionGrid(_newFieldIndex, EditorFields, 4);
-            string field = EditorFields[_newFieldIndex];
+            int main = Array.IndexOf(AddMainFields, _newField);
+            int picked = GUILayout.SelectionGrid(main, AddMainLabels, 4);
+            if (picked != main && picked >= 0) _newField = AddMainFields[picked];
+            if (GUILayout.Button(_showFingerFields ? "▼ 指の関節ごとの欄を隠す" : "▶ 指の関節ごとの欄（親指〜小指）を出す")) _showFingerFields = !_showFingerFields;
+            if (_showFingerFields)
+            {
+                int finger = Array.IndexOf(AddFingerFields, _newField);
+                int pickedFinger = GUILayout.SelectionGrid(finger, AddFingerLabels, 5);
+                if (pickedFinger != finger && pickedFinger >= 0) _newField = AddFingerFields[pickedFinger];
+            }
+            string field = _newField;
             bool exists = false;
             foreach (var row in _editorView.Get(_editor.Asset, _editorChara, _editorState)) if (row.Field == field) exists = true;
             bool enabled = GUI.enabled; GUI.enabled = enabled && !exists;
-            if (GUILayout.Button(exists ? "この欄はすでにあります" : field + " を追加"))
+            if (GUILayout.Button(exists ? "この欄はすでにあります" : PoseForceFields.Label(field) + "（" + field + "）を追加"))
                 _editorAction = () =>
                 {
                     string target = "";

@@ -82,6 +82,9 @@ khs_f_00		female	InsertIdle	root_pos	0	0.05	0		user
 | L/R_shinFK_rot | cf_j_leg01_L/R | localEulerAngles |
 | L/R_footFK_rot | cf_j_foot_L/R | localEulerAngles |
 | L/R_toeFK_rot | cf_j_toes_L/R | localEulerAngles |
+| L/R_hand_rot | cf_j_hand_L/R | localEulerAngles（IK を解いた後） |
+| L/R_fingers_rot | cf_j_index/middle/ring/little 01〜03_L/R（12 関節） | 同じ値を各関節の localEulerAngles に（IK を解いた後） |
+| L/R_<指><関節>_rot | cf_j_<指><関節>_L/R（指は thumb・index・middle・ring・little、関節は 01・02・03） | localEulerAngles（IK を解いた後） |
 
 同じ骨に入る spine_rot と spine_roll は合わせて適用する。存在しない骨の欄は、警告して使わない。
 
@@ -92,8 +95,9 @@ khs_f_00		female	InsertIdle	root_pos	0	0.05	0		user
 | 種類 | 欄 | 効く条件 |
 |---|---|---|
 | 体の骨 | root_pos・waist_rot・spine_rot・spine_roll・L/R_shld_rot・L/R_hipShp_pos・L/R_footFK_rot・L/R_toeFK_rot | いつも。IK が後から書き直さない（足首から先は脚の IK の外） |
-| 手足の IK の目標 | L/R_hand_pos・L/R_elbow_pos・L/R_foot_pos・L/R_foot_rot・L/R_knee_pos | ゲームの IK が、その状態でその手足（ひじ・ひざは曲げの目標）を自分の cf_pv_* に付けているときだけ。設定 MoveUnlinkedLimbs がオンなら、相手の体に付いている手足・IK の付いていない手足も動かす。IK が止まっている状態では効かない |
+| 手足の IK の目標 | L/R_hand_pos・L/R_elbow_pos・L/R_foot_pos・L/R_foot_rot・L/R_knee_pos | ゲームの IK が、その状態でその手足（ひじ・ひざは曲げの目標）を自分の cf_pv_* に付けているときだけ。設定 MoveUnlinkedLimbs がオンなら、相手の体に付いている手足・IK の付いていない手足も動かし、IK が止まっている状態でも欄のある手足だけをこのプラグインが IK で動かす。設定 ForceFootIK がオンなら、foot_pos・foot_rot・elbow_pos・knee_pos は付け先に関係なく自分の cf_pv_* に重み 1 で付けて動かす |
 | 太もも・すね | L/R_thighFK_rot・L/R_shinFK_rot | 脚の IK が働いていないとき（IK が止まっている状態を含む）。働いていると IK が向きを決め直す。設定 LegFKAfterIK がオンなら、IK を解いた後に足す（足が IK の目標から外れることがある） |
+| 手首・指 | L/R_hand_rot・L/R_fingers_rot・L/R_<指><関節>_rot | いつも。IK を解いた後に足す（IK が止まっている状態では、アニメーションの後に足す） |
 | 手の付け替え | ik_hand_L・ik_hand_R | IK が動いている状態で、UseHandIK がオンのとき |
 
 値の意味（ずらし・回転の量と向き）は、どの設定でも同じ。MoveUnlinkedLimbs のずらしは、cf_pv_* の親から見た向きで、今の目標に足す。
@@ -123,5 +127,5 @@ field は `disabled:` と対応している欄名、x=1、y=z=0、target は空�
 欄を足し直すと、その削除の指定は外れる。「kPlug・内蔵の値に戻す…」でも、この体位の手動の行と削除の指定を取り除ける。手の付け替えの欄を消した場合は、既存の手のリンクの追従に戻ることがある。手の付け替え・追従補助を止めるには UseHandIK を切る（手・肘の位置などの体の補正の欄は引き続き効く）。
 
 ---
-更新日時 (JST): 2026-11-09
+更新日時 (JST): 2026-11-13
 更新者: ChatGPT Codex（GPT-6）、Claude Code（Opus 5.5）

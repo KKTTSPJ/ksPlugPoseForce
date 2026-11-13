@@ -157,10 +157,12 @@ namespace ksPlugPoseForce
             /// false は IK が止まっている状態（LateUpdate）で、手足の IK の目標の欄は効かないので足さない（kPlug と同じく体の骨・脚の FK は足す）。
             /// IK を解く直前で LegFKAfterIK が有効なら、太もも・すねは IK の後（PostSolve）に足す。
             /// </summary>
-            internal void Apply(IList<PoseForceRow> rows, float force, bool ikRunning = true)
+            /// afterInPost: IK が止まっている人の手足を自分で解く（SolveStopped）とき true。手首・指（と LegFKAfterIK の太もも・すね）は解いた後の ApplyPost で足す。
+            internal void Apply(IList<PoseForceRow> rows, float force, bool ikRunning = true, bool afterInPost = false)
             {
                 if (ikRunning) { _lastRows = rows; _lastForce = force; _lastFrame = Time.frameCount; }
-                bool legAfter = ikRunning && LegFKAfterIK.Value;
+                bool solved = ikRunning || afterInPost;
+                bool legAfter = solved && LegFKAfterIK.Value;
                 foreach (var slot in _bones.Values) slot.Begin();
                 foreach (var row in rows)
                 {
@@ -168,6 +170,7 @@ namespace ksPlugPoseForce
                     if (kind == PoseForceFields.Kind.Hand) continue;
                     if (!ikRunning && kind == PoseForceFields.Kind.IKTarget) continue;
                     if (legAfter && kind == PoseForceFields.Kind.LegFK) continue;
+                    if (solved && kind == PoseForceFields.Kind.AfterIK) continue;
                     var bindings = PoseForceFields.Get(row.Field);
                     if (bindings == null) continue;
                     foreach (var binding in bindings)
@@ -241,34 +244,45 @@ namespace ksPlugPoseForce
             internal void ApplyLimbs(IList<PoseForceRow> rows, float force)
             {
                 bool on = MoveUnlinkedLimbs.Value;
+                // 0.1.6 ForceFootIK: 補正量が 0 のときは付け替えない（補正量 0 で元の形に戻す）
+                bool forceOn = ForceFootIK.Value && force > 0f;
                 foreach (var limb in Limbs)
                 {
-                    if (!on) { limb.Idle(); continue; }
+                    if (!on && !forceOn) { limb.Idle(); continue; }
                     PoseForceRow pos = null, rot = null, bend = null, hand = null;
+                    bool legFK = false;
                     string handField = limb.Arm ? "ik_hand_" + limb.Side : null;
+                    string thigh = limb.Side + "_thighFK_rot", shin = limb.Side + "_shinFK_rot";
                     foreach (var row in rows)
                     {
                         if (row.Field == limb.PosField) pos = row;
                         else if (limb.RotField != null && row.Field == limb.RotField) rot = row;
                         else if (row.Field == limb.BendField) bend = row;
                         else if (handField != null && row.Field == handField) hand = row;
+                        else if (!limb.Arm && (row.Field == thigh || row.Field == shin)) legFK = true;
                     }
                     if (hand != null && UseHandIK.Value) { limb.Idle(); continue; }
                     var e = limb.Effector;
                     Transform pvTarget = PvBone(limb.PvTarget), pvBend = PvBone(limb.PvBend);
+                    // ForceFootIK: 太もも・すねの欄がある脚は足の IK を外す（LegFKAfterIK がオフのとき）。
+                    // foot_pos・foot_rot がある足は自分の cf_pv_leg（欄の値を足した後）に重み 1 で付ける。
+                    // elbow_pos・knee_pos は曲げの目標を自分の cf_pv_elbo・cf_pv_knee に重み 1 で付ける。
+                    bool release = forceOn && !limb.Arm && legFK && !LegFKAfterIK.Value;
+                    Transform forceTarget = forceOn && !limb.Arm && !release && (pos != null || rot != null) ? pvTarget : null;
+                    Transform forceGoal = forceOn && bend != null && limb.Bend != null ? pvBend : null;
                     bool followTarget = PoseForceLimbIK.Follows(e.target, pvTarget, e.positionWeight);
                     bool followBend = limb.Bend != null && PoseForceLimbIK.Follows(limb.Bend.bendGoal, pvBend, limb.Bend.weight);
                     Vector3? delta = null, bendDelta = null;
                     Quaternion? q = null;
                     // 目標を追っている手足は、ふだんどおり cf_pv_* に足した値で動くので、ここでは何もしない。
-                    if (!followTarget)
+                    if (on && !followTarget && !release && forceTarget == null)
                     {
                         if (pos != null) delta = Space(pvTarget).TransformVector(new Vector3(pos.X, pos.Y, pos.Z) * force);
                         if (rot != null) q = Quaternion.Euler(new Vector3(rot.X, rot.Y, rot.Z) * force);
                     }
-                    if (!followBend && bend != null) bendDelta = Space(pvBend).TransformVector(new Vector3(bend.X, bend.Y, bend.Z) * force);
-                    if (delta == null && q == null && bendDelta == null) { limb.Idle(); continue; }
-                    limb.Apply(delta, q, bendDelta);
+                    if (on && !followBend && forceGoal == null && bend != null) bendDelta = Space(pvBend).TransformVector(new Vector3(bend.X, bend.Y, bend.Z) * force);
+                    if (delta == null && q == null && bendDelta == null && !release && forceTarget == null && forceGoal == null) { limb.Idle(); continue; }
+                    limb.Apply(delta, q, bendDelta, forceTarget, release, forceGoal);
                 }
             }
 
@@ -283,31 +297,127 @@ namespace ksPlugPoseForce
             /// <summary>IK を解いた後: 手足の目標を戻し、LegFKAfterIK の太もも・すねを足す。</summary>
             private void PostSolve()
             {
+                if (Manual) return;   // SolveStopped の中の Update では何もしない（SolveStopped の後で足す）
                 try
                 {
                     foreach (var limb in Limbs) limb.Restore();
-                    if (LegFKAfterIK.Value && _lastFrame == Time.frameCount && _lastRows != null)
-                    {
-                        foreach (var slot in _postBones.Values) slot.Begin();
-                        foreach (var row in _lastRows)
-                        {
-                            if (PoseForceFields.KindOf(row.Field) != PoseForceFields.Kind.LegFK) continue;
-                            var bindings = PoseForceFields.Get(row.Field);
-                            if (bindings == null) continue;
-                            foreach (var binding in bindings)
-                            {
-                                Slot slot;
-                                if (!_postBones.TryGetValue(binding.Bone, out slot)) { slot = new Slot(BodyBone(Cha, binding.Bone)); _postBones.Add(binding.Bone, slot); }
-                                slot.Add(binding.Mode, new Vector3(row.X, row.Y, row.Z) * _lastForce);
-                            }
-                        }
-                        foreach (var slot in _postBones.Values) slot.Apply();
-                        _postUsed = true;
-                    }
+                    if (_lastFrame == Time.frameCount && _lastRows != null) ApplyPost(_lastRows, _lastForce);
                     else if (_postUsed) ClearPost();
                 }
                 catch (System.Exception ex) { Fail("IK の後の補正", ex); return; }
                 LogHandsAfterSolve();
+            }
+
+            /// <summary>IK を解いた後に足す欄: 手首・指（いつも）と、LegFKAfterIK の太もも・すね。</summary>
+            internal void ApplyPost(IList<PoseForceRow> rows, float force)
+            {
+                bool any = false;
+                foreach (var slot in _postBones.Values) slot.Begin();
+                foreach (var row in rows)
+                {
+                    var kind = PoseForceFields.KindOf(row.Field);
+                    if (kind != PoseForceFields.Kind.AfterIK && !(kind == PoseForceFields.Kind.LegFK && LegFKAfterIK.Value)) continue;
+                    var bindings = PoseForceFields.Get(row.Field);
+                    if (bindings == null) continue;
+                    foreach (var binding in bindings)
+                    {
+                        Slot slot;
+                        if (!_postBones.TryGetValue(binding.Bone, out slot)) { slot = new Slot(BodyBone(Cha, binding.Bone)); _postBones.Add(binding.Bone, slot); }
+                        if (slot.T == null && _missing.Add(binding.Bone))
+                            PoseForcePlugin.Logger.LogWarning("[PoseForce] " + Label + "の骨が見つからないため、この欄を使いません: " + row.Field + " / " + binding.Bone);
+                        slot.Add(binding.Mode, new Vector3(row.X, row.Y, row.Z) * force);
+                        any = true;
+                    }
+                }
+                if (any || _postUsed) foreach (var slot in _postBones.Values) slot.Apply();
+                _postUsed = any;
+            }
+
+            /// <summary>SolveStopped で自分の IK を解いている間。OnPreUpdate・OnPostUpdate の処理を飛ばす。</summary>
+            internal bool Manual { get; private set; }
+
+            /// <summary>IK が止まっている状態で手足を自分で解く設定（MoveUnlinkedLimbs か ForceFootIK）。</summary>
+            internal static bool StoppedSolveOn { get { return MoveUnlinkedLimbs.Value || ForceFootIK.Value; } }
+
+            /// <summary>IK が止まっている状態で、MoveUnlinkedLimbs・ForceFootIK により手足を自分で解くか（手足の IK の目標の欄があるとき）。</summary>
+            internal bool NeedsStoppedSolve(IList<PoseForceRow> rows)
+            {
+                if (!StoppedSolveOn || Ik.solver == null || !Ik.solver.initiated) return false;
+                foreach (var row in rows) if (PoseForceFields.KindOf(row.Field) == PoseForceFields.Kind.IKTarget) return true;
+                return false;
+            }
+
+            /// <summary>
+            /// 0.1.5: ゲームが IK を止めている人の手足を、表の手足の欄の分だけ動かす（MoveUnlinkedLimbs）。
+            /// その人の FBBIK のすべての効き手・曲げ・鎖の引きと、IK 全体の重みを控え、
+            /// 体・肩・太ももの効き手と鎖の引きは 0、欄のある手足だけを「今の位置＋ずらし」の仮の目標に重み 1 で付けて 1 回解き、
+            /// 解いた後に控えた値へすべて戻す（ゲームの IK の設定は残さない）。欄の無い手足は IK を掛けない（今の形のまま）。
+            /// </summary>
+            internal void SolveStopped(IList<PoseForceRow> rows, float force)
+            {
+                var s = Ik.solver;
+                var effectors = s.effectors;
+                var chains = s.chain;
+                var targets = new Transform[effectors.Length];
+                var posWeights = new float[effectors.Length];
+                var rotWeights = new float[effectors.Length];
+                var goals = new Transform[chains.Length];
+                var bendWeights = new float[chains.Length];
+                var pulls = new float[chains.Length];
+                var reaches = new float[chains.Length];
+                var pushes = new float[chains.Length];
+                var pushParents = new float[chains.Length];
+                float ikWeight = s.IKPositionWeight;
+                for (int i = 0; i < effectors.Length; ++i)
+                { targets[i] = effectors[i].target; posWeights[i] = effectors[i].positionWeight; rotWeights[i] = effectors[i].rotationWeight; }
+                for (int i = 0; i < chains.Length; ++i)
+                {
+                    var bend = chains[i].bendConstraint;
+                    goals[i] = bend != null ? bend.bendGoal : null; bendWeights[i] = bend != null ? bend.weight : 0f;
+                    pulls[i] = chains[i].pull; reaches[i] = chains[i].reach; pushes[i] = chains[i].push; pushParents[i] = chains[i].pushParent;
+                }
+                try
+                {
+                    foreach (var e in effectors) { e.positionWeight = 0f; e.rotationWeight = 0f; }
+                    foreach (var c in chains)
+                    {
+                        if (c.bendConstraint != null) c.bendConstraint.weight = 0f;
+                        c.pull = 0f; c.reach = 0f; c.push = 0f; c.pushParent = 0f;
+                    }
+                    bool any = false;
+                    foreach (var limb in Limbs)
+                    {
+                        PoseForceRow pos = null, rot = null, bendRow = null;
+                        foreach (var row in rows)
+                        {
+                            if (row.Field == limb.PosField) pos = row;
+                            else if (limb.RotField != null && row.Field == limb.RotField) rot = row;
+                            else if (row.Field == limb.BendField) bendRow = row;
+                        }
+                        if (pos == null && rot == null && bendRow == null) continue;
+                        Vector3 delta = pos != null ? Space(PvBone(limb.PvTarget)).TransformVector(new Vector3(pos.X, pos.Y, pos.Z) * force) : Vector3.zero;
+                        Quaternion? q = rot != null ? Quaternion.Euler(new Vector3(rot.X, rot.Y, rot.Z) * force) : (Quaternion?)null;
+                        Vector3 bendDelta = bendRow != null ? Space(PvBone(limb.PvBend)).TransformVector(new Vector3(bendRow.X, bendRow.Y, bendRow.Z) * force) : Vector3.zero;
+                        if (limb.PlaceStopped(delta, q, bendDelta)) any = true;
+                    }
+                    if (!any) return;
+                    s.IKPositionWeight = 1f;
+                    Manual = true;
+                    s.Update();
+                }
+                finally
+                {
+                    Manual = false;
+                    s.IKPositionWeight = ikWeight;
+                    for (int i = 0; i < effectors.Length; ++i)
+                    { effectors[i].target = targets[i]; effectors[i].positionWeight = posWeights[i]; effectors[i].rotationWeight = rotWeights[i]; }
+                    for (int i = 0; i < chains.Length; ++i)
+                    {
+                        var bend = chains[i].bendConstraint;
+                        if (bend != null) { bend.bendGoal = goals[i]; bend.weight = bendWeights[i]; }
+                        chains[i].pull = pulls[i]; chains[i].reach = reaches[i]; chains[i].push = pushes[i]; chains[i].pushParent = pushParents[i];
+                    }
+                }
             }
 
             private void ClearPost()
@@ -330,10 +440,24 @@ namespace ksPlugPoseForce
                     case PoseForceFields.Kind.Hand:
                         if (!UseHandIK.Value) return "効かない：UseHandIK がオフ";
                         return ik ? "効く（手の IK の付け先を替える）" : "効かない：この状態ではゲームが IK を止めている";
+                    case PoseForceFields.Kind.AfterIK:
+                        return "効く（手首・指: IK の後に足す）";
                     case PoseForceFields.Kind.LegFK:
                         {
-                            if (!ik) return "効く（IK が止まっている状態）";
+                            if (!ik)
+                            {
+                                bool solvedLeg = false;
+                                if (StoppedSolveOn && !LegFKAfterIK.Value)
+                                {
+                                    string side = field.Substring(0, 2);
+                                    foreach (var row in rows)
+                                        if (row.Field == side + "foot_pos" || row.Field == side + "foot_rot" || row.Field == side + "knee_pos") solvedLeg = true;
+                                }
+                                return solvedLeg ? "効かない見込み：MoveUnlinkedLimbs・ForceFootIK でこの脚を IK で動かしていて、IK が上書きする（LegFKAfterIK で IK の後に足せる）"
+                                    : "効く（IK が止まっている状態）";
+                            }
                             if (LegFKAfterIK.Value) return "効く（LegFKAfterIK: IK の後に足す。足が IK の目標から外れることがある）";
+                            if (ForceFootIK.Value) return "効く（ForceFootIK: この足の IK の重みを 0 にして太もも・すねを効かせる。足は IK の目標から外れる）";
                             var leg = Limbs[field.StartsWith("L_", System.StringComparison.Ordinal) ? 2 : 3];
                             bool pinned = leg.Effector.positionWeight > 0f || (leg.Bend != null && leg.Bend.weight > 0f);
                             return pinned ? "効かない見込み：脚の IK が働いていて、IK が上書きする（LegFKAfterIK で IK の後に足せる）"
@@ -341,7 +465,9 @@ namespace ksPlugPoseForce
                         }
                     default:
                         {
-                            if (!ik) return "効かない：この状態ではゲームが IK を止めている";
+                            if (!ik) return StoppedSolveOn
+                                ? "効く（" + (MoveUnlinkedLimbs.Value ? "MoveUnlinkedLimbs" : "ForceFootIK") + ": ゲームが IK を止めている状態でも、この手足だけ IK で動かす）"
+                                : "効かない：この状態ではゲームが IK を止めている（MoveUnlinkedLimbs・ForceFootIK で動かせる）";
                             PoseForceLimbIK limb = null;
                             foreach (var l in Limbs)
                                 if (field == l.PosField || field == l.RotField || field == l.BendField) { limb = l; break; }
@@ -352,6 +478,14 @@ namespace ksPlugPoseForce
                             Transform target = bend ? (limb.Bend != null ? limb.Bend.bendGoal : null) : limb.Effector.target;
                             float weight = bend ? (limb.Bend != null ? limb.Bend.weight : 0f) : limb.Effector.positionWeight;
                             string pv = bend ? limb.PvBend : limb.PvTarget;
+                            if (ForceFootIK.Value && (bend || !limb.Arm))
+                            {
+                                if (!bend && !LegFKAfterIK.Value)
+                                    foreach (var row in rows)
+                                        if (row.Field == limb.Side + "_thighFK_rot" || row.Field == limb.Side + "_shinFK_rot")
+                                            return "効かない：ForceFootIK で、同じ脚の太もも・すねの欄を優先して足の IK を外している";
+                                return "効く（ForceFootIK: " + pv + " に付け替えて重み 1 で動かす）";
+                            }
                             if (PoseForceLimbIK.Follows(target, PvBone(pv), weight)) return "効く（ゲームの IK が " + pv + " に付けている）";
                             string link = "付け先 " + PoseForceLimbIK.LinkName(target) + "・重み " + weight.ToString("0.00");
                             if (MoveUnlinkedLimbs.Value) return "効く（MoveUnlinkedLimbs: 今の IK の目標をずらす。" + link + "）";

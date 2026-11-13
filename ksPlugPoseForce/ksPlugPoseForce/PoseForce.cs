@@ -35,6 +35,7 @@ namespace ksPlugPoseForce
         internal static ConfigEntry<bool> UseHandIK;
         internal static ConfigEntry<bool> LegFKAfterIK;
         internal static ConfigEntry<bool> MoveUnlinkedLimbs;
+        internal static ConfigEntry<bool> ForceFootIK;
         private static bool _noIK;   // 女の IK が止まっている状態で、IK に関係しない欄だけを足している
         private static ConfigEntry<float> _winX, _winY;
         private static ConfigEntry<float> _editorWinX, _editorWinY;
@@ -76,7 +77,9 @@ namespace ksPlugPoseForce
             LegFKAfterIK = config.Bind(s, "LegFKAfterIK", false,
                 "太もも・すねの回転（thighFK_rot・shinFK_rot）を、IK を解いた後に足します。脚の IK が働いている体位でも脚が動きますが、足が IK の目標から外れる（接地・接触がずれる）ことがあります。切ると IK を解く前に足し、脚の IK が働いている体位では IK が上書きします。");
             MoveUnlinkedLimbs = config.Bind(s, "MoveUnlinkedLimbs", false,
-                "手足のずらし（hand_pos・elbow_pos・foot_pos・foot_rot・knee_pos）を、ゲームの IK がその手足を自分の目標に付けていない体位・状態でも効かせます。相手の体などに付いている手足は今の目標からずらし、IK の付いていない手足は今の位置からずらした目標に付けます。接触の位置がずれることがあります。手の付け替え（ik_hand）がある手は、そちらを優先します。");
+                "手足のずらし（hand_pos・elbow_pos・foot_pos・foot_rot・knee_pos）を、ゲームの IK がその手足を自分の目標に付けていない体位・状態でも効かせます。相手の体などに付いている手足は今の目標からずらし、IK の付いていない手足は今の位置からずらした目標に付けます。ゲームが IK を止めている状態でも、欄のある手足だけをこのプラグインが IK で動かします（ゲームの IK の設定は毎フレーム元に戻します）。接触の位置がずれることがあります。手の付け替え（ik_hand）がある手は、そちらを優先します。");
+            ForceFootIK = config.Bind(s, "ForceFootIK", false,
+                "foot_pos・foot_rot・elbow_pos・knee_pos の欄があるとき、ゲームの IK の付け先（相手の体など）に関係なく、足の IK とひじ・ひざの曲げを自分の目標（cf_pv_leg・cf_pv_elbo・cf_pv_knee）に重み 1 で付けて動かします。太もも・すね（thighFK_rot・shinFK_rot）の欄がある脚は、LegFKAfterIK がオフなら足の IK を外して太もも・すねを効かせます。ゲームが IK を止めている状態でも、欄のある手足を動かします。相手の体との接触の位置はずれます。付け替えは IK を解いている間だけで、毎フレーム元に戻します（欄の無い体位・状態では、ゲームの IK のまま）。補正量が 0 のときは付け替えません。");
             config.Bind(s, "ReloadTable", false, new ConfigDescription("内蔵の値と PoseForce.tsv を読み直します。", null,
                 new ConfigurationManagerAttributes { CustomDrawer = entry => { if (GUILayout.Button("値の表を読み直す")) ReloadTable(); } }));
             config.Bind(s, "ImportExport", false, new ConfigDescription("import フォルダの kPlug の書き出し・共有データを取り込みます。自分で直した行と無効化の設定は残します。", null,
@@ -133,6 +136,10 @@ namespace ksPlugPoseForce
                 harmony.Patch(destroy, prefix: new HarmonyMethod(typeof(PoseForce), nameof(ProcDestroyPrefix)));
                 harmony.Patch(motion, prefix: new HarmonyMethod(typeof(PoseForce), nameof(MotionIKCalcPrefix)));
                 PoseForcePlugin.Instance.gameObject.AddComponent<PoseForceInputBlocker>();
+                // 0.1.6 WheelAdjust: 右ボタン＋ホイールの間、Hシーンのカメラのズームを止める
+                var zoom = AccessTools.Method(typeof(BaseCameraControl_Ver2), "InputMouseWheelZoomProc");
+                if (zoom != null) harmony.Patch(zoom, prefix: new HarmonyMethod(typeof(PoseForceControls), nameof(PoseForceControls.CameraWheelPrefix)));
+                else PoseForcePlugin.Logger.LogWarning($"{Tag} カメラのホイールの処理が見つからないため、WheelAdjust の間もカメラがズームします。");
                 PoseForcePlugin.Logger.LogInfo($"{Tag} HSceneProc に当てました（設定: {(Enabled.Value ? "有効" : "無効")}）。");
             }
             catch (Exception ex)
@@ -248,7 +255,16 @@ namespace ksPlugPoseForce
         {
             if (!NoIK(rig)) return;
             if (!want) { rig.Clear(); return; }
-            rig.Apply(_table.Get(asset, rig.Role, state), force, false);
+            var rows = _table.Get(asset, rig.Role, state);
+            if (!rig.NeedsStoppedSolve(rows))
+            {
+                rig.Apply(rows, force, false);   // 手首・指もここで足す（IK が無いので後から書き直されない）
+                return;
+            }
+            // 0.1.5 MoveUnlinkedLimbs: 体の骨を足してから手足だけ IK で動かし、その後に手首・指（と LegFKAfterIK の太もも・すね）を足す
+            rig.Apply(rows, force, false, true);
+            rig.SolveStopped(rows, force);
+            rig.ApplyPost(rows, force);
         }
 
         private static Rig Ensure(Rig rig, ChaControl cha, string role)
@@ -342,7 +358,10 @@ namespace ksPlugPoseForce
         {
             if (rig == null) return;
             // IK が止まっている人も、ほかの人の手が付く骨のために先に足す（LateUpdate でも同じ値を足す。同じフレームに 2 回足しても 1 回分になる）
-            rig.Apply(_table.Get(asset, rig.Role, state), force, rig.Ik.enabled);
+            var rows = _table.Get(asset, rig.Role, state);
+            if (rig.Ik.enabled) rig.Apply(rows, force, true);
+            // 手足を自分で解く人（MoveUnlinkedLimbs）は、解くと 2 回目で動きが重なるので LateUpdate だけで足す
+            else if (!rig.NeedsStoppedSolve(rows)) rig.Apply(rows, force, false);
         }
 
         private static void SetActive(bool active, string why)
@@ -357,6 +376,7 @@ namespace ksPlugPoseForce
         /// <summary>FullBodyBipedIK の solver.OnPreUpdate から。アニメーションの後、IK を解く直前。</summary>
         private static void PreSolve(Rig rig)
         {
+            if (rig.Manual) return;   // IK が止まっている人の手足を自分で解いている間（SolveStopped）
             if (_failed || !Enabled.Value) { rig.Clear(); return; }
             try
             {
@@ -409,7 +429,7 @@ namespace ksPlugPoseForce
                 + (_female2 != null ? " / " + _female2.DescribeHands() : "")
                 + (_maleRig != null ? " / " + _maleRig.DescribeHands() : ""));
             // 0.1.4: 手足ごとのゲームの IK の付け先と重み（手足の IK の目標の欄が効くかの見分け）
-            PoseForcePlugin.Logger.LogInfo(Tag + "[手足] 状態 " + state + "・LegFKAfterIK=" + LegFKAfterIK.Value + "・MoveUnlinkedLimbs=" + MoveUnlinkedLimbs.Value
+            PoseForcePlugin.Logger.LogInfo(Tag + "[手足] 状態 " + state + "・LegFKAfterIK=" + LegFKAfterIK.Value + "・MoveUnlinkedLimbs=" + MoveUnlinkedLimbs.Value + "・ForceFootIK=" + ForceFootIK.Value
                 + " / " + _female.DescribeLimbs()
                 + (_female2 != null ? " / " + _female2.DescribeLimbs() : "")
                 + (_maleRig != null ? " / " + _maleRig.DescribeLimbs() : ""));

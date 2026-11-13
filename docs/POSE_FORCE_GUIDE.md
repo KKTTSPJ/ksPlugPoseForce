@@ -34,7 +34,10 @@ VR・MMF（男２人＋女１人）・奉仕等・エステには対応しない
 | ForceUpKey／ForceDownKey | 未割り当て | 量を 0.1 増減。押し続けると 0.4 秒後から 0.1 秒ごとに繰り返す |
 | UseHandIK | true | 手の付け先・ずらしと、既存の手のリンクの追従補助（[手 IK](POSE_FORCE_HAND_IK.md)） |
 | LegFKAfterIK | false | 太もも・すねの回転（thighFK_rot・shinFK_rot）を IK を解いた後に足す。脚の IK が働いている体位でも脚が動くが、足が IK の目標から外れる（接地・接触がずれる）ことがある（下の「欄によって効かないとき」） |
-| MoveUnlinkedLimbs | false | 手足のずらし（hand_pos・elbow_pos・foot_pos・foot_rot・knee_pos）を、ゲームの IK がその手足を自分の目標に付けていない体位・状態でも効かせる。接触の位置がずれることがある（下の「欄によって効かないとき」） |
+| MoveUnlinkedLimbs | false | 手足のずらし（hand_pos・elbow_pos・foot_pos・foot_rot・knee_pos）を、ゲームの IK がその手足を自分の目標に付けていない体位・状態や、ゲームが IK を止めている状態でも効かせる。接触の位置がずれることがある（下の「欄によって効かないとき」） |
+| ForceFootIK | false | foot_pos・foot_rot・elbow_pos・knee_pos の欄があるとき、ゲームの IK の付け先（相手の体など）に関係なく、足の IK とひじ・ひざの曲げを自分の目標（cf_pv_leg・cf_pv_elbo・cf_pv_knee）に重み 1 で付けて動かす。太もも・すねの欄がある脚は、LegFKAfterIK がオフなら足の IK を外す。ゲームが IK を止めている状態でも欄のある手足を動かす。相手の体との接触はずれる（下の「欄によって効かないとき」） |
+| WheelAdjust | false | Hシーンで、右ボタンを押しながらホイールを回して補正量を変える（上で増やす・下で減らす）。右ボタンを押している間は何目盛りでも続けて変えられ、その間はゲームのカメラのズームを止める |
+| WheelStep | 0.1 | WheelAdjust のホイール 1 目盛りで変える補正量（0.01〜1） |
 | LogBones | false | 調査用の骨・手 IK のログ。通常はオフ |
 
 キーは ConfigurationManager で割り当てる。WindowKey と EditorWindowKey は別のキーにする。ゲームに焦点がない間、文字の入力中、選択ダイアログを開いている間は、補正量のキーは効かない。マウスのホイールでの操作は無い。
@@ -97,7 +100,7 @@ ConfigurationManager の「値の編集画面を開く」から、人・状態�
 
 画面に出る理由と、EnablePoseForce・量・今の体位／状態を確かめる。値の表が空、値のない体位・状態、止めてある体位、体位を変えた直後は補正しない。手だけを確かめるときは UseHandIK も見る。
 
-ゲームがその状態で女の IK を止めているときは「補正しています（女の IK が止まっている状態：…）」と出る。このときも体の骨の欄と太もも・すねは補正する（kPlug と同じ）。手足の IK の目標の欄と手の付け替えは、ゲームが IK を使わないので効かない。
+ゲームがその状態で女の IK を止めているときは「補正しています（女の IK が止まっている状態：…）」と出る。このときも体の骨の欄・太もも・すね・手首・指は補正する（kPlug と同じ）。手足の IK の目標の欄は、MoveUnlinkedLimbs か ForceFootIK がオンのときだけ効く（このプラグインがその手足だけを IK で動かす）。手の付け替えは効かない。
 
 ## 欄によって効かないとき
 
@@ -106,16 +109,20 @@ ConfigurationManager の「値の編集画面を開く」から、人・状態�
 | 種類 | 欄 | 効く条件 |
 |---|---|---|
 | 体の骨 | root_pos・waist_rot・spine_rot・spine_roll・shld_rot・hipShp_pos・footFK_rot・toeFK_rot | いつも（IK が止まっている状態でも） |
-| 手足の IK の目標 | hand_pos・elbow_pos・foot_pos・foot_rot・knee_pos | ゲームの IK が、その状態でその手足を自分の目標（cf_pv_*）に付けているときだけ。相手の体に付いている手足（騎乗位の女の手など）や、IK が付いていない手足では動かない。MoveUnlinkedLimbs をオンにすると動く |
+| 手足の IK の目標 | hand_pos・elbow_pos・foot_pos・foot_rot・knee_pos | ゲームの IK が、その状態でその手足を自分の目標（cf_pv_*）に付けているときだけ。相手の体に付いている手足（騎乗位の女の手など）や、IK が付いていない手足では動かない。MoveUnlinkedLimbs・ForceFootIK（hand_pos を除く）をオンにすると動く |
 | 太もも・すね | thighFK_rot・shinFK_rot | 脚の IK が働いていないときだけ。働いていると、IK を解くときに脚の向きが決め直されて消える。LegFKAfterIK をオンにすると動く |
+| 手首・指 | hand_rot・fingers_rot・thumb01_rot〜little03_rot | いつも。IK を解いた後に足す（手首は腕の IK の端なので、後に足さないと IK が向きを決め直す。指は IK の外） |
 | 手の付け替え | ik_hand_L・ik_hand_R | IK が動いている状態で、UseHandIK がオンのとき |
 
 - 足首から先（footFK_rot・toeFK_rot）は脚の IK の外なので、いつも効く。
 - MoveUnlinkedLimbs: 相手の体などに付いている手足は、その付け先からずらす。IK が付いていない手足は、今の位置からずらした目標に付ける（IK で動かすようになる）。どちらも IK を解いている間だけで、ゲームが決めた付け先・重みは変えない。同じ手に手の付け替え（ik_hand）の行があれば、そちらを優先する。
+- MoveUnlinkedLimbs（ゲームが IK を止めている状態）: その人の欄のある手足だけを、今の位置からずらした目標に付けて、このプラグインが IK を解く。体・肩・太ももは動かさず、欄の無い手足もそのまま。解く前のゲームの IK の設定（付け先・重み）は控えておき、解いた後に毎フレーム元に戻す。この脚は IK で決め直すので、太もも・すねの欄は LegFKAfterIK もオンにしないと効かない。
+- ForceFootIK: foot_pos・foot_rot の欄がある足は、ゲームの付け先をやめて自分の cf_pv_leg（欄の値を足した位置・向き）に位置・回転とも重み 1 で付ける。elbow_pos・knee_pos は曲げの目標を自分の cf_pv_elbo・cf_pv_knee に重み 1 で付ける。MoveUnlinkedLimbs が今の付け先からずらすのに対して、こちらはアニメーションの目標の位置に付けるので、相手の体との接触は保たない。thighFK_rot・shinFK_rot の欄がある脚は、LegFKAfterIK がオフなら足の IK の重みを 0 にして太もも・すねを効かせる（その脚の foot_pos・foot_rot は効かない）。hand_pos は付け替えない（MoveUnlinkedLimbs で動かす）。どれも IK を解いている間だけで、解いた後に毎フレーム元に戻すので、欄の無い体位・状態ではゲームの IK のまま。補正量が 0 のときは付け替えない。MoveUnlinkedLimbs と一緒にオンにすると、ForceFootIK の対象の欄はこちらを優先する。ゲームが IK を止めている状態では MoveUnlinkedLimbs と同じに動かす。
+- fingers_rot は、親指以外の 4 本の指の 3 つの関節すべてに同じ回転を足す。指の関節ごとの欄（例: L_index02_rot）と一緒に使うと、両方の値を足す。
 - LegFKAfterIK: 太もも・すねを、IK を解いた後に回す。足や膝が IK の目標から外れるので、床や相手との接触がずれることがある。
 - どちらも既定はオフ。オンにしても、自分の目標に付いている手足・脚の IK が働いていない脚の動きは変わらない。
 - 手足の付け先と重みは、LogBones をオンにするとログの `[PoseForce][手足]` に約 1 秒ごとに出る。
 
 ---
-更新日時 (JST): 2026-11-09
+更新日時 (JST): 2026-11-13
 更新者: ChatGPT Codex（GPT-6）、Claude Code（Opus 5.5）

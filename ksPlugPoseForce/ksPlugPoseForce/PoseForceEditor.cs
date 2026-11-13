@@ -14,7 +14,6 @@ namespace ksPlugPoseForce
         private static string _editorStatus = "", _editorState = "", _editorChara = "female", _editorLoadKey;
         private static Action _editorAction;
         private static string[] _editorStates = new string[0], _editorTargets = new string[0], _restoreFiles = new string[0];
-        private static readonly string[] EditorFields = PoseForceFields.Names();
         private static string _lastImportPath;
         private static string _editorKPlugName = "";
 
